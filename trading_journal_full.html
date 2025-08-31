@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trading Journal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ---------- Base / Theme ---------- */
+    :root { --bg:#f8fafc; --card:#fff; --muted:#64748b; --text:#0f172a; }
+    body { font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin:0; padding:14px; background:var(--bg); color:var(--text); transition:background .2s,color .2s;}
+    body.dark { --bg:#0f172a; --card:#0f172a; --muted:#cbd5e1; --text:#f1f5f9; }
+
+    /* ---------- Topbar (centered month label) ---------- */
+    .topbar { display:flex; align-items:center; justify-content:space-between; position:relative; margin-bottom:12px; }
+    .topbar .side-btn { position:relative; z-index:2; }
+    .title { position:absolute; left:50%; transform:translateX(-50%); text-align:center; pointer-events:none; }
+    .title h1 { margin:0; font-size:18px; font-weight:700; }
+    .title .month { font-size:13px; color:var(--muted); margin-top:4px; }
+
+    .btn { padding:8px 10px; border-radius:8px; border:1px solid rgba(15,23,42,0.08); background:var(--card); cursor:pointer; transition:transform .08s, background .08s; color:var(--text); }
+    .btn:hover { transform:translateY(-2px); }
+    body.dark .btn { border-color: rgba(255,255,255,0.06); color:#f1f5f9; background:#1e293b; border:1px solid rgba(255,255,255,0.12); }
+    body.dark .btn:hover { background:#334155; }
+
+    /* ---------- Calendar grid ---------- */
+    .calendar-container { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .weekday { text-align:center; font-size:12px; color:var(--muted); }
+    .day { background:var(--card); border-radius:10px; min-height:94px; padding:8px; box-shadow:0 6px 16px rgba(2,6,23,0.04); display:flex; flex-direction:column; gap:6px; cursor:pointer; transition:0.15s; box-sizing:border-box; }
+    .day.empty { background:transparent !important; box-shadow:none !important; pointer-events:none !important; }
+    .day.weekend { background:#eef2ff !important; cursor:default !important; pointer-events:none !important; }
+    body.dark .day.weekend { background:#2d3b57 !important; }
+
+    /* === Dark mode improvements === */
+    body.dark .day {
+      background:#1e293b;
+      border:1px solid rgba(255,255,255,0.05);
+      box-shadow:none;
+    }
+    body.dark .day:hover { box-shadow:0 0 6px rgba(255,255,255,0.12); transform:scale(1.02); }
+    body.dark .pnl.positive { color:#4ade80; }
+    body.dark .pnl.negative { color:#f87171; }
+    body.dark .day.empty { border:none !important; background:transparent !important; box-shadow:none !important; }
+
+    .day-number { font-weight:700; }
+    .pnl { font-weight:700; font-size:13px; text-align:right; margin-top:auto; }
+    .pnl.positive { color:#16a34a; }
+    .pnl.negative { color:#ef4444; }
+    .winrate { font-size:11px; text-align:right; color:var(--muted); }
+    .trcount { font-size:12px; text-align:right; color:var(--muted); }
+
+    /* ---------- Stats ---------- */
+    .stats { margin-top:12px; display:flex; gap:12px; flex-wrap:wrap; background:var(--card); padding:10px; border-radius:12px; align-items:center; }
+    .stat { min-width:100px; }
+    .stat-label { font-size:12px; color:var(--muted); }
+    .stat-value { font-weight:700; font-size:14px; }
+
+    /* ---------- Modals / Sheets ---------- */
+    .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,0.45); z-index:1200; padding:16px; }
+    .modal.show { display:flex; }
+    .sheet { width:100%; max-width:520px; background:var(--card); border-radius:14px; padding:18px; box-shadow:0 18px 40px rgba(2,6,23,0.2); max-height:86vh; overflow:auto; color:var(--text); }
+    body.dark .sheet { background:#1e293b; box-shadow:0 12px 30px rgba(2,6,23,0.6); }
+
+    .sheet input, .sheet select, .sheet textarea {
+      width:100%; max-width:420px; margin:0 auto 10px; padding:10px 12px; border-radius:10px; border:1px solid rgba(15,23,42,0.08); font-size:14px; display:block; box-sizing:border-box;
+    }
+    body.dark .sheet input, body.dark .sheet select, body.dark .sheet textarea {
+      border-color:rgba(255,255,255,0.15);
+      background:#0f172a;
+      color:#f1f5f9;
+    }
+    body.dark .sheet input::placeholder, body.dark .sheet textarea::placeholder { color:rgba(255,255,255,0.6); }
+
+    #resultBtns { display:flex; gap:8px; max-width:420px; margin:0 auto 10px; }
+    .btn.result { flex:1; border-radius:20px; border:1px solid rgba(15,23,42,0.08); background:transparent; color:var(--muted); padding:8px 12px; }
+    .btn.result.active { color:white; }
+
+    body.dark .btn.result { border:1px solid rgba(255,255,255,0.12); background:#1e293b; color:var(--muted); }
+    body.dark .btn.result.active[data-result="win"] { background:#22c55e; border-color:#22c55e; color:#fff; }
+    body.dark .btn.result.active[data-result="loss"] { background:#ef4444; border-color:#ef4444; color:#fff; }
+    body.dark .btn.result.active[data-result="be"] { background:#3b82f6; border-color:#3b82f6; color:#fff; }
+
+    .daily-summary { padding:10px; border-radius:10px; text-align:center; font-weight:700; max-width:420px; margin:8px auto; }
+    .daily-summary.profit { background:#dcfce7; color:#166534; }
+    .daily-summary.loss { background:#fee2e2; color:#991b1b; }
+    .daily-summary.neutral { background:#e0f2fe; color:#075985; }
+    body.dark .daily-summary.profit { background:#14532d; color:#22c55e; }
+    body.dark .daily-summary.loss { background:#7f1d1d; color:#ef4444; }
+    body.dark .daily-summary.neutral { background:#1e3a8a; color:#3b82f6; }
+
+    .trade-row { background:#f8fafc; border-radius:10px; padding:8px; margin-bottom:8px; font-size:14px; }
+    body.dark .trade-row { background:#112233; }
+
+    .trade-actions { display:flex; gap:8px; margin-top:8px; }
+
+    /* ---------- Weekly card colors ---------- */
+    .weekly-card { cursor:pointer; border-radius:10px; padding:10px; margin-bottom:8px; }
+    .weekly-card.profit { background:#dcfce7; color:#166534; }
+    .weekly-card.loss { background:#fee2e2; color:#991b1b; }
+    .weekly-card.neutral { background:#e0f2fe; color:#075985; }
+    body.dark .weekly-card.profit { background:#14532d; color:#bbf7d0; }
+    body.dark .weekly-card.loss { background:#7f1d1d; color:#fecaca; }
+    body.dark .weekly-card.neutral { background:#1e3a8a; color:#bfdbfe; }
+
+    /* ---------- Misc ---------- */
+    .muted { color:var(--muted); font-size:13px; }
+    hr { border:none; border-top:1px solid rgba(15,23,42,0.06); margin:12px 0; }
+    body.dark hr { border-top-color: rgba(255,255,255,0.04); }
+
+    #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#16a34a; color:white; padding:8px 12px; border-radius:8px; display:none; z-index:1300; }
+  </style>
+</head>
+<body>
+  <!-- Top bar -->
+  <div class="topbar">
+    <button class="btn side-btn" onclick="prevMonth()">◀</button>
+
+    <div class="title">
+      <h1>Trading Journal</h1>
+      <div id="monthLabel" class="month muted"></div>
+    </div>
+
+    <button class="btn side-btn" onclick="nextMonth()">▶</button>
+  </div>
+
+  <!-- Weekday headers -->
+  <div class="calendar-container" id="weekdays"></div>
+
+  <!-- Calendar grid -->
+  <div class="calendar-container" id="calendar"></div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Monthly P&L</div><div id="totalPnl" class="stat-value">0.00</div></div>
+    <div class="stat"><div class="stat-label">Trades</div><div id="totalTrades" class="stat-value">0</div></div>
+    <div class="stat"><div class="stat-label">Wins</div><div id="wins" class="stat-value">0</div></div>
+    <div class="stat"><div class="stat-label">Losses</div><div id="losses" class="stat-value">0</div></div>
+    <div class="stat"><div class="stat-label">Win Rate</div><div id="winRate" class="stat-value">0%</div></div>
+    <div style="margin-left:auto"><button class="btn" onclick="toggleDarkMode()">🌙</button></div>
+  </div>
+
+  <!-- Weekly performance -->
+  <h3 style="margin-top:18px;">📈 Weekly Performance</h3>
+  <div id="weeklyStats"></div>
+
+  <!-- DAILY modal (Add/Edit trades) -->
+  <div class="modal" id="modal" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <h3 id="modalDate">Date</h3>
+
+      <select id="symbolSelect" aria-label="Favorite symbols"></select>
+      <input id="inputSymbol" placeholder="Or type custom symbol (e.g. XAUUSD)" autocomplete="off" />
+
+      <input id="inputPnl" type="number" placeholder="P&L" step="0.01" />
+
+      <div id="resultBtns">
+        <button class="btn result" data-result="win">Win</button>
+        <button class="btn result" data-result="loss">Loss</button>
+        <button class="btn result" data-result="be">Break-even</button>
+      </div>
+
+      <textarea id="inputNotes" placeholder="Notes..." rows="3"></textarea>
+
+      <div style="display:flex;gap:8px;max-width:420px;margin:0 auto 8px;">
+        <button class="btn" style="flex:1" onclick="saveTrade()">💾 Save</button>
+        <button class="btn" style="flex:1" onclick="closeModal()">✖ Close</button>
+      </div>
+
+      <div class="favorites-box" style="max-width:420px;margin:0 auto 10px;">
+        <button class="btn" style="width:100%" onclick="toggleFavoritesManager()">⚙ Manage Favorites</button>
+      </div>
+
+      <div class="favorites-box" id="favoritesBox" style="display:none;">
+        <input id="newFavorite" placeholder="Add new favorite symbol (e.g. GBPJPY)" />
+        <div style="display:flex;gap:8px;margin:8px 0 12px;">
+          <button class="btn" onclick="addFavorite()">Add</button>
+          <button class="btn" onclick="toggleFavoritesManager()">Close</button>
+        </div>
+        <div id="favoritesList"></div>
+      </div>
+
+      <div id="dailySummary" class="daily-summary neutral">No trades yet.</div>
+
+      <hr />
+
+      <div id="tradeList"></div>
+    </div>
+  </div>
+
+  <!-- WEEKLY modal -->
+  <div class="modal" id="weeklyModal" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <h3 id="weeklyModalTitle">Weekly Trades</h3>
+      <div id="weeklySummary" class="daily-summary neutral"></div>
+      <hr />
+      <div id="weeklyTradeList"></div>
+
+      <!-- Capital input -->
+      <div style="margin-top:12px;">
+        <label for="weeklyCapitalInput" class="stat-label">Starting Capital</label>
+        <input id="weeklyCapitalInput" type="number" placeholder="e.g. 10000" step="0.01" onblur="saveWeeklyCapital()" />
+      </div>
+
+      <button class="btn" style="margin-top:12px;width:100%" onclick="closeWeeklyModal()">✖ Close</button>
+      <button class="btn" style="margin-top:8px;width:100%" onclick="generateGeminiWeeklyReport()">🤖 Generate Gemini AI Report</button>
+      <div id="aiWeeklyReport" style="margin-top:12px; font-size:14px; line-height:1.5;"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+/* ================= Data / State ================= */
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+let trades = JSON.parse(localStorage.getItem("journal") || "[]");
+let favorites = JSON.parse(localStorage.getItem("favorites") || '["BTCUSDT","ETHUSDT","EURUSD","XAUUSD","GBPJPY"]');
+let weeklyCapital = JSON.parse(localStorage.getItem("weeklyCapital") || "{}"); // per-week starting capital
+
+let today = new Date();
+let currentMonth = today.getMonth();
+let currentYear = today.getFullYear();
+
+let selectedDate = null;
+let selectedResult = null;
+let editingId = null;
+
+// store week range for Gemini (used by modal Generate button)
+let currentWeekRange = { start: null, end: null, summary: "", weekKey: null };
+
+/* ================= Helpers: local date strings ================= */
+function pad(n){ return String(n).padStart(2,"0"); }
+function formatDateLocal(d){
+  if(!d) return "";
+  if(typeof d === "string") return d;
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function mondayOfWeekLocal(d){
+  const tmp = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = tmp.getDay(); // 0..6 (Sun..Sat)
+  const diffToMonday = (day === 0 ? -6 : 1) - day;
+  tmp.setDate(tmp.getDate() + diffToMonday);
+  return tmp;
+}
+function sundayOfWeekLocal(d){
+  const monday = mondayOfWeekLocal(d);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate()+6);
+  return sunday;
+}
+
+/* ================= Calendar rendering ================= */
+function renderWeekdays(){
+  const el = document.getElementById("weekdays");
+  el.innerHTML = WEEKDAYS.map(d => `<div class="weekday">${d}</div>`).join("");
+}
+
+function renderCalendar() {
+  const cal = document.getElementById("calendar");
+  cal.innerHTML = "";
+  document.getElementById("monthLabel").innerText =
+    MONTHS[currentMonth] + " " + currentYear;
+
+  const firstDow = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+  for (let i = 0; i < firstDow; i++) {
+    cal.innerHTML += "<div class='day empty'></div>";
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const dayTrades = trades.filter((t) => t.date === key);
+    const pnl = dayTrades.reduce((a, t) => a + Number(t.pnl), 0);
+    const wins = dayTrades.filter((t) => t.result === "win").length;
+    const nonBeTrades = dayTrades.filter(t => t.result !== "be").length;
+    const rate = nonBeTrades ? Math.round((wins / nonBeTrades) * 100) : 0;
+    const dow = new Date(currentYear, currentMonth, d).getDay();
+
+    const weekendClass = (dow === 0 || dow === 6) ? "weekend" : "";
+    cal.innerHTML += `
+      <div class="day ${weekendClass}" onclick="${dow === 0 || dow === 6 ? "" : `openModal('${key}')`}">
+        <div class="day-number">${d}</div>
+        <div class="pnl ${pnl > 0 ? "positive" : pnl < 0 ? "negative" : ""}">${pnl ? (pnl > 0 ? "+" : "") + pnl.toFixed(2) : ""}</div>
+        <div class="winrate">${nonBeTrades ? rate + "% WR" : ""}</div>
+        <div class="trcount">${dayTrades.length ? dayTrades.length + " trade" + (dayTrades.length>1 ? "s" : "") : ""}</div>
+      </div>
+    `;
+  }
+  renderStats();
+  renderWeeklyStats();
+}
+
+/* ================= Monthly stats ================= */
+function renderStats(){
+  const monthTrades = trades.filter(t => {
+    const d = new Date(t.date + "T00:00:00");
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+  const pnl = monthTrades.reduce((a,t) => a + Number(t.pnl), 0);
+  const wins = monthTrades.filter(t => t.result === "win").length;
+  const losses = monthTrades.filter(t => t.result === "loss").length;
+  const nonBeTrades = monthTrades.filter(t => t.result !== "be").length;
+  const rate = nonBeTrades ? Math.round(wins/nonBeTrades*100) : 0;
+
+  document.getElementById("totalPnl").innerText = pnl.toFixed(2);
+  document.getElementById("totalTrades").innerText = monthTrades.length;
+  document.getElementById("wins").innerText = wins;
+  document.getElementById("losses").innerText = losses;
+  document.getElementById("winRate").innerText = rate + "%";
+}
+
+/* ================= Weekly aggregation & cards ================= */
+function getWeekNumber(d){
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((dt - yearStart)/86400000) + 1)/7);
+  return [dt.getUTCFullYear(), weekNo];
+}
+
+function calculateWeeklyStats(){
+  const weekly = {};
+  trades.forEach(t => {
+    const d = new Date(t.date + "T00:00:00");
+    const [year, week] = getWeekNumber(d);
+    const key = `${year}-W${String(week).padStart(2,"0")}`;
+
+    if(!weekly[key]){
+      const mon = mondayOfWeekLocal(d);
+      const sun = sundayOfWeekLocal(d);
+      weekly[key] = { pnl:0, trades:0, wins:0, losses:0, breakeven:0, start: mon, end: sun };
+    }
+
+    weekly[key].pnl += Number(t.pnl);
+    weekly[key].trades++;
+    if(t.result === "win") weekly[key].wins++;
+    if(t.result === "loss") weekly[key].losses++;
+    if(t.result === "be") weekly[key].breakeven++;
+  });
+  return weekly;
+}
+
+function renderWeeklyStats(){
+  const box = document.getElementById("weeklyStats");
+  box.innerHTML = "";
+  const weekly = calculateWeeklyStats();
+  const keys = Object.keys(weekly).sort().reverse(); // newest first
+  if(keys.length === 0){
+    box.innerHTML = `<p class="muted">No weekly data yet.</p>`;
+    return;
+  }
+
+  keys.forEach(k => {
+    const w = weekly[k];
+    const nonBeTrades = w.wins + w.losses;
+    const rate = nonBeTrades ? Math.round(w.wins / nonBeTrades * 100) : 0;
+    const start = formatDateLocal(w.start);
+    const end = formatDateLocal(w.end);
+    const pnlText = (w.pnl>0 ? "+" : "") + w.pnl.toFixed(2);
+    let cls = "neutral";
+    if(w.pnl > 0) cls = "profit";
+    else if(w.pnl < 0) cls = "loss";
+
+    // Weekly capital & ROI
+    const cap = Number(weeklyCapital[k] || 0);
+    const roi = cap > 0 ? (w.pnl / cap) * 100 : null;
+    const roiText = roi !== null ? ` • ROI ${roi.toFixed(1)}%` : "";
+
+    box.innerHTML += `
+      <div class="weekly-card ${cls}" onclick="openWeeklyModal('${k}','${start}','${end}','${encodeURIComponent(`Weekly P&L: ${pnlText} | WinRate: ${rate}%`)}')">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <b>${k}</b>
+            <div class="muted" style="margin-top:6px">${start} → ${end}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-weight:700">${pnlText}</div>
+            <div class="muted" style="margin-top:6px">${w.trades} trades • ${w.wins} wins • ${w.losses} losses • ${w.breakeven} BE • ${rate}% WR${roiText}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+}
+
+/* ================= Weekly modal ================= */
+function getWeeklyTradesByStrings(startStr, endStr){
+  const s = formatDateLocal(startStr);
+  const e = formatDateLocal(endStr);
+  return trades.filter(t => t.date >= s && t.date <= e);
+}
+
+function openWeeklyModal(weekKey, weekStartStr, weekEndStr, shortEsc){
+  const shortSummary = shortEsc ? decodeURIComponent(shortEsc) : `Weekly ${weekKey}`;
+
+  let weeklyTrades = [];
+  let startStr = weekStartStr || "";
+  let endStr   = weekEndStr || "";
+
+  if(startStr && endStr){
+    weeklyTrades = getWeeklyTradesByStrings(startStr, endStr);
+  } else {
+    // fallback: compute by ISO week
+    const [y,w] = weekKey.split("-W");
+    weeklyTrades = trades.filter(t => {
+      const d = new Date(t.date + "T00:00:00");
+      const [yy, ww] = getWeekNumber(d);
+      return String(yy) === y && String(ww).padStart(2,"0") === w;
+    });
+    // derive start/end
+    if(weeklyTrades.length){
+      const any = new Date(weeklyTrades[0].date+"T00:00:00");
+      startStr = formatDateLocal(mondayOfWeekLocal(any));
+      endStr   = formatDateLocal(sundayOfWeekLocal(any));
+    } else {
+      const any = new Date();
+      startStr = formatDateLocal(mondayOfWeekLocal(any));
+      endStr   = formatDateLocal(sundayOfWeekLocal(any));
+    }
+  }
+
+  const pnl = weeklyTrades.reduce((a,t)=>a+Number(t.pnl),0);
+  const wins = weeklyTrades.filter(t=>t.result==="win").length;
+  const losses = weeklyTrades.filter(t=>t.result==="loss").length;
+  const be = weeklyTrades.filter(t=>t.result==="be").length;
+  const nonBeTrades = wins + losses;
+  const rate = nonBeTrades ? Math.round(wins/nonBeTrades*100) : 0;
+  const pnlClass = pnl > 0 ? "profit" : (pnl < 0 ? "loss" : "neutral");
+
+  // Prefill capital input for this week
+  const cap = Number(weeklyCapital[weekKey] || 0);
+  document.getElementById("weeklyCapitalInput").value = cap ? String(cap) : "";
+
+  // ROI if capital provided
+  const roi = cap > 0 ? (pnl / cap) * 100 : null;
+  const roiBadge = roi !== null ? ` • ROI: <b>${roi.toFixed(1)}%</b>` : "";
+
+  const summaryEl = document.getElementById("weeklySummary");
+  summaryEl.className = "daily-summary " + pnlClass;
+  summaryEl.innerHTML = `<b>${weeklyTrades.length} trade(s)</b> • Total P&L: <b>${pnl>=0?"+":""}${pnl.toFixed(2)}</b> • Win Rate: <b>${rate}%</b>${roiBadge}`;
+
+  const list = document.getElementById("weeklyTradeList");
+  list.innerHTML = "";
+  if(weeklyTrades.length === 0){
+    list.innerHTML = `<p class="muted">No trades this week.</p>`;
+  } else {
+    weeklyTrades.sort((a, b) => a.date.localeCompare(b.date));
+    weeklyTrades.forEach(t => {
+      list.innerHTML += `<div class="trade-row"><div class="trade-info">${t.date} • ${t.symbol} • ${t.result.toUpperCase()} • ${t.pnl>=0?"+":""}${Number(t.pnl).toFixed(2)}</div><div class="muted" style="margin-top:6px">${t.notes||""}</div></div>`;
+    });
+  }
+
+  document.getElementById("weeklyModalTitle").innerText = `${weekKey}  (${startStr} → ${endStr})`;
+  document.getElementById("weeklyModal").classList.add("show");
+
+  currentWeekRange.start = startStr;
+  currentWeekRange.end = endStr;
+  currentWeekRange.summary = shortSummary;
+  currentWeekRange.weekKey = weekKey;
+
+  document.getElementById("aiWeeklyReport").innerHTML = "";
+}
+function closeWeeklyModal(){ document.getElementById("weeklyModal").classList.remove("show"); }
+
+/* ================= Save weekly capital ================= */
+function saveWeeklyCapital(){
+  const wk = currentWeekRange.weekKey;
+  if(!wk) return;
+  const val = parseFloat(document.getElementById("weeklyCapitalInput").value || "0");
+  if(isNaN(val) || val < 0){ showToast("Enter a valid capital"); return; }
+  weeklyCapital[wk] = val;
+  localStorage.setItem("weeklyCapital", JSON.stringify(weeklyCapital));
+  showToast("Starting capital saved");
+  renderWeeklyStats();
+  // update modal summary
+  openWeeklyModal(wk, currentWeekRange.start, currentWeekRange.end, encodeURIComponent(currentWeekRange.summary));
+}
+
+/* ================= Favorites ================= */
+function renderFavoritesDropdown(){
+  const sel = document.getElementById("symbolSelect");
+  sel.innerHTML = `<option value="">--Select Symbol--</option>` + favorites.map(f => `<option value="${f}">${f}</option>`).join("");
+}
+
+function renderFavoritesList(){
+  const box = document.getElementById("favoritesList");
+  box.innerHTML = "";
+  favorites.forEach((f,i) => {
+    const div = document.createElement("div");
+    div.className = "favorite-item";
+    div.style.display = "flex";
+    div.style.justifyContent = "space-between";
+    div.style.alignItems = "center";
+    div.style.marginBottom = "8px";
+    div.innerHTML = `<div>${f}</div><div><button class="btn" onclick="removeFavorite(${i})">Remove</button></div>`;
+    box.appendChild(div);
+  });
+}
+
+function toggleFavoritesManager(){
+  const fb = document.getElementById("favoritesBox");
+  fb.style.display = (fb.style.display === "block") ? "none" : "block";
+  renderFavoritesList();
+}
+
+function addFavorite(){
+  const v = (document.getElementById("newFavorite").value || "").trim().toUpperCase();
+  if(!v) return;
+  if(!favorites.includes(v)){
+    favorites.push(v);
+    localStorage.setItem("favorites", JSON.stringify(favorites));
+    renderFavoritesDropdown();
+    renderFavoritesList();
+    showToast("Favorite added");
+  } else {
+    showToast("Already in favorites");
+  }
+  document.getElementById("newFavorite").value = "";
+}
+
+function removeFavorite(i){
+  if(i<0 || i>=favorites.length) return;
+  favorites.splice(i,1);
+  localStorage.setItem("favorites", JSON.stringify(favorites));
+  renderFavoritesDropdown();
+  renderFavoritesList();
+  showToast("Favorite removed");
+}
+
+/* ================= Daily modal / trade CRUD ================= */
+function openModal(date){
+  selectedDate = date;
+  selectedResult = null;
+  editingId = null;
+  document.getElementById("modalDate").innerText = date;
+  document.getElementById("modal").classList.add("show");
+  resetInputs();
+  renderTradeList();
+  renderDailySummary();
+  renderFavoritesDropdown();
+}
+
+function closeModal(){
+  document.getElementById("modal").classList.remove("show");
+}
+
+function saveTrade(){
+  const sym = (document.getElementById("symbolSelect").value || document.getElementById("inputSymbol").value || "").trim();
+  const pnl = parseFloat(document.getElementById("inputPnl").value || 0);
+  const notes = (document.getElementById("inputNotes").value || "").trim();
+
+  if(!sym){ alert("Enter symbol"); return; }
+  if(!selectedResult){ alert("Select result (Win/Loss/BE)"); return; }
+
+  if(editingId){
+    trades = trades.map(t => t.id === editingId ? { ...t, symbol: sym, pnl, notes, result: selectedResult } : t);
+    showToast("Trade updated");
+    editingId = null;
+  } else {
+    trades.push({ id: Date.now().toString(), date: selectedDate, symbol: sym, pnl, notes, result: selectedResult });
+    showToast("Trade saved");
+  }
+
+  localStorage.setItem("journal", JSON.stringify(trades));
+  renderTradeList();
+  renderCalendar();
+  renderDailySummary();
+  resetInputs();
+}
+
+function renderTradeList(){
+  const list = document.getElementById("tradeList");
+  list.innerHTML = "";
+  const dayTrades = trades.filter(t => t.date === selectedDate);
+  if(dayTrades.length === 0){
+    list.innerHTML = `<p class="muted">No trades yet.</p>`;
+    return;
+  }
+  dayTrades.forEach(t => {
+    const div = document.createElement("div");
+    div.className = "trade-row";
+    div.innerHTML = `
+      <div class="trade-info">${t.symbol} • ${t.result.toUpperCase()} • ${t.pnl>=0?"+":""}${Number(t.pnl).toFixed(2)}</div>
+      <div class="muted" style="margin-top:6px">${t.notes || ""}</div>
+      <div class="trade-actions">
+        <button class="btn" onclick="editTrade('${t.id}')">Edit</button>
+        <button class="btn" onclick="deleteTrade('${t.id}')">Delete</button>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function renderDailySummary(){
+  const summary = document.getElementById("dailySummary");
+  const dayTrades = trades.filter(t => t.date === selectedDate);
+  if(dayTrades.length === 0){ summary.className = "daily-summary neutral"; summary.innerText = "No trades yet."; return; }
+  const pnl = dayTrades.reduce((a,t) => a + Number(t.pnl), 0);
+  const wins = dayTrades.filter(t => t.result === "win").length;
+  const losses = dayTrades.filter(t => t.result === "loss").length;
+  const nonBeTrades = wins + losses;
+  const rate = nonBeTrades ? Math.round((wins / nonBeTrades) * 100) : 0;
+  let cls = "neutral";
+  if(pnl > 0) cls = "profit";
+  else if(pnl < 0) cls = "loss";
+  summary.className = "daily-summary " + cls;
+  summary.innerHTML = `<b>${dayTrades.length} trade(s)</b> • Total P&L: <b>${pnl>=0?"+":""}${pnl.toFixed(2)}</b> • Win Rate: <b>${rate}%</b>`;
+}
+
+function editTrade(id){
+  const t = trades.find(x => x.id === id);
+  if(!t) return;
+  editingId = id;
+  document.getElementById("inputSymbol").value = t.symbol;
+  document.getElementById("symbolSelect").value = "";
+  document.getElementById("inputPnl").value = t.pnl;
+  document.getElementById("inputNotes").value = t.notes;
+  selectedResult = t.result;
+  highlightResult();
+  selectedDate = t.date;
+  document.getElementById("modalDate").innerText = t.date;
+  document.getElementById("modal").classList.add("show");
+  renderTradeList();
+  renderDailySummary();
+}
+
+function deleteTrade(id){
+  if(!confirm("Delete this trade?")) return;
+  trades = trades.filter(t => t.id !== id);
+  localStorage.setItem("journal", JSON.stringify(trades));
+  renderTradeList();
+  renderCalendar();
+  renderDailySummary();
+  showToast("Trade deleted");
+}
+
+/* ================= Helpers / UI utils ================= */
+function toggleDarkMode(){
+  document.body.classList.toggle("dark");
+}
+
+function resetInputs(){
+  document.getElementById("symbolSelect").value = "";
+  document.getElementById("inputSymbol").value = "";
+  document.getElementById("inputPnl").value = "";
+  document.getElementById("inputNotes").value = "";
+  selectedResult = null;
+  editingId = null;
+  highlightResult();
+}
+
+function highlightResult(){
+  document.querySelectorAll("#resultBtns .btn.result").forEach(btn => {
+    btn.classList.remove("active");
+    if(btn.dataset && btn.dataset.result === selectedResult) btn.classList.add("active");
+  });
+}
+
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.innerText = msg;
+  t.style.display = "block";
+  setTimeout(()=> t.style.display = "none", 1600);
+}
+
+/* ================= Navigation ================= */
+function prevMonth(){ currentMonth--; if(currentMonth < 0){ currentMonth = 11; currentYear--; } renderCalendar(); }
+function nextMonth(){ currentMonth++; if(currentMonth > 11){ currentMonth = 0; currentYear++; } renderCalendar(); }
+
+/* ================= Gemini Integration ================= */
+/* Your Gemini API key (you provided previously) */
+const GEMINI_API_KEY = "AIzaSyAOxXQetv8Dz4wcXBRXrE1JrwEmWnIU3bk";
+
+/* Helper to escape HTML */
+function escapeHtml(text) {
+  if(!text) return "";
+  return text.replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* Local fallback report generator (now includes ROI) */
+function localWeeklyReport(weeklyTrades, weekKey) {
+  const pnl = weeklyTrades.reduce((a,t) => a + Number(t.pnl), 0);
+  const wins = weeklyTrades.filter(t => t.result === "win").length;
+  const losses = weeklyTrades.filter(t => t.result === "loss").length;
+  const total = weeklyTrades.length;
+  const nonBeTrades = wins + losses;
+  const rate = nonBeTrades ? Math.round(wins/nonBeTrades*100) : 0;
+
+  const symbolCount = {};
+  weeklyTrades.forEach(t => { symbolCount[t.symbol] = (symbolCount[t.symbol] || 0) + 1; });
+  const topSymbol = Object.entries(symbolCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || "—";
+
+  const cap = Number(weeklyCapital[weekKey] || 0);
+  const roi = cap > 0 ? (pnl / cap) * 100 : null;
+
+  let suggestion = "Focus on consistency.";
+  if (rate > 70) suggestion = "Great performance! Keep managing risk well.";
+  else if (rate < 40) suggestion = "Review losing trades and tighten risk management.";
+  else if (pnl < 0) suggestion = "Loss this week; consider reducing position sizes and avoid revenge trading.";
+  else suggestion = "Decent week — refine trade selection and keep a watch on top symbols.";
+
+  return {
+    title: "Local Weekly Report",
+    html: `<b>Local Weekly Report:</b><br>
+      Trades: ${total} (${wins} wins, ${losses} losses)<br>
+      PnL: ${pnl>=0?'+':''}${pnl.toFixed(2)}<br>
+      ROI: ${roi !== null ? roi.toFixed(1)+'%' : 'N/A'}<br>
+      Winrate: ${rate}%<br>
+      Top Symbol: ${escapeHtml(topSymbol)}<br>
+      Suggestion: ${escapeHtml(suggestion)}`
+  };
+}
+
+// Format date to YYYY-MM-DD (safe)
+function formatDate(d) {
+  if(!d) return "";
+  if(typeof d === "string") return d;
+  return d.toISOString().split("T")[0];
+}
+
+// Get all trades between two dates (string-based compare to avoid timezone issues)
+function getWeeklyTrades(startDate, endDate) {
+  const start = formatDate(new Date(startDate));
+  const end = formatDate(new Date(endDate));
+
+  return trades.filter(t => {
+    return t.date >= start && t.date <= end;
+  });
+}
+
+// Robust extractor for Gemini response (tries common shapes)
+function extractTextFromGeminiResponse(data){
+  if(!data) return "";
+  try {
+    if (data.candidates && data.candidates[0]) {
+      const cont = data.candidates[0].content;
+      if (Array.isArray(cont)) {
+        let text = cont.map(block=>{
+          if (block.parts && Array.isArray(block.parts)) return block.parts.map(p=>p.text||"").join("");
+          if (block.text) return block.text;
+          return "";
+        }).join("\n\n");
+        if(text && text.trim()) return text;
+      } else if (cont && cont.parts && cont.parts[0] && cont.parts[0].text) {
+        return cont.parts[0].text;
+      }
+    }
+  } catch(e){ /* ignore */ }
+
+  try {
+    if (data.output && Array.isArray(data.output) && data.output[0] && data.output[0].content) {
+      const cont = data.output[0].content;
+      if (Array.isArray(cont)) return cont.map(c=>c.text||"").join("\n");
+      if (typeof cont === "string") return cont;
+    }
+  } catch(e){ /* ignore */ }
+
+  try {
+    if(data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content[0] && data.candidates[0].content[0].text){
+      return data.candidates[0].content[0].text;
+    }
+  } catch(e){}
+
+  try{
+    if(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content){
+      const cont = data.choices[0].message.content;
+      if(typeof cont === "string") return cont;
+      if(Array.isArray(cont)) return cont.map(c=>c.text||"").join("\n");
+    }
+  }catch(e){}
+
+  function findFirstString(obj){
+    if(!obj) return null;
+    if(typeof obj === "string") return obj;
+    if(Array.isArray(obj)){
+      for(const it of obj){
+        const s = findFirstString(it);
+        if(s) return s;
+      }
+    } else if(typeof obj === "object"){
+      for(const k in obj){
+        const s = findFirstString(obj[k]);
+        if(s) return s;
+      }
+    }
+    return null;
+  }
+  return findFirstString(data) || "";
+}
+
+// ✅ Generate Gemini report (includes ROI in prompt)
+async function generateGeminiWeeklyReport(weekStart, weekEnd, shortSummary, weekKey) {
+  if (!weekStart || !weekEnd) {
+    if (currentWeekRange && currentWeekRange.start && currentWeekRange.end) {
+      weekStart = currentWeekRange.start;
+      weekEnd = currentWeekRange.end;
+      shortSummary = currentWeekRange.summary;
+      weekKey = currentWeekRange.weekKey;
+    } else if (weekKey) {
+      // we'll derive trades by weekKey below
+    } else {
+      alert("⚠️ Missing week range. Open a weekly modal or click the week on the calendar first.");
+      return;
+    }
+  }
+
+  let weeklyTrades = [];
+
+  if (weekStart && weekEnd) {
+    const s = new Date(formatDate(weekStart) + "T00:00:00");
+    const e = new Date(formatDate(weekEnd) + "T00:00:00");
+    weeklyTrades = getWeeklyTrades(s, e);
+  } else if (weekKey) {
+    const [y, w] = weekKey.split("-W");
+    weeklyTrades = trades.filter(t => {
+      const d = new Date(t.date + "T00:00:00");
+      const [yy, ww] = getWeekNumber(d);
+      return String(yy) === y && String(ww).padStart(2,"0") === w;
+    });
+  }
+
+  if (!weeklyTrades || weeklyTrades.length === 0) {
+    alert("⚠️ No trades found for this week.");
+    return;
+  }
+
+  showToast("Generating Gemini report...");
+
+  const pnl = weeklyTrades.reduce((a,t)=>a+Number(t.pnl),0);
+  const wins = weeklyTrades.filter(t=>t.result==="win").length;
+  const losses = weeklyTrades.filter(t=>t.result==="loss").length;
+  const total = weeklyTrades.length;
+  const nonBeTrades = wins + losses;
+  const rate = nonBeTrades ? Math.round(wins/nonBeTrades*100) : 0;
+  const short = shortSummary || `Trades: ${total}, PnL ${(pnl>=0?"+":"")+pnl.toFixed(2)}, WR ${rate}%`;
+
+  const cap = Number(weeklyCapital[weekKey] || 0);
+  const roi = cap > 0 ? (pnl / cap) * 100 : null;
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `You are a concise trading analyst. Here is the weekly trading data:\n\nSummary: ${short}\nWeekly P&L: ${(pnl>=0?"+":"")+pnl.toFixed(2)}\nStarting Capital: ${cap || "N/A"}\nROI: ${roi !== null ? roi.toFixed(1)+"%" : "N/A"}\n\nTrades:\n${JSON.stringify(weeklyTrades,null,2)}\n\nPlease generate a short professional report (3-5 short paragraphs) with: key insights, strengths, weaknesses, ROI analysis (efficiency of capital usage), and 3 quick action items.`
+          }
+        ]
+      }
+    ]
+  };
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    const data = await resp.json();
+    console.log("Gemini raw response:", data);
+
+    let textOutput = extractTextFromGeminiResponse(data);
+    if(!textOutput || textOutput.trim()===""){
+      const local = localWeeklyReport(weeklyTrades, weekKey);
+      textOutput = local.html.replace(/<br>/g,"\n");
+    }
+
+    document.getElementById("aiWeeklyReport").innerHTML = escapeHtml(textOutput).replace(/\n/g,"<br>");
+    alert("📊 Gemini Weekly Report:\n\n" + textOutput);
+
+  } catch (err) {
+    console.error("Gemini API error:", err);
+    const local = localWeeklyReport(weeklyTrades, weekKey);
+    document.getElementById("aiWeeklyReport").innerHTML = local.html;
+    alert("⚠️ Gemini API error: " + (err.message || String(err)) + "\n\nShowing local summary instead.");
+  }
+}
+
+/* ================= Init / Event listeners ================= */
+document.addEventListener("DOMContentLoaded", () => {
+  // result toggle buttons
+  document.querySelectorAll("#resultBtns .btn.result").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedResult = btn.dataset.result;
+      highlightResult();
+    });
+  });
+
+  // Enter to save from PnL input
+  const pnlEl = document.getElementById("inputPnl");
+  pnlEl.addEventListener("keypress", (e) => {
+    if(e.key === "Enter"){ e.preventDefault(); saveTrade(); }
+  });
+
+  // initial renders
+  renderFavoritesDropdown();
+  renderWeekdays();
+  renderCalendar();
+});
+</script>
+</body>
+</html>
